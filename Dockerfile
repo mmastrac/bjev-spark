@@ -14,8 +14,18 @@ ARG LLAMA_REF=9a9394a895b96003ca842a6041cb28ac49a108f7
 # GB10 is sm_121; building for anything else produces a binary this box cannot run.
 ARG CUDA_ARCH=121
 RUN apt-get update && apt-get install -y --no-install-recommends \
-      git cmake ninja-build build-essential libcurl4-openssl-dev ca-certificates \
+      git cmake ninja-build build-essential ca-certificates \
     && rm -rf /var/lib/apt/lists/*
+
+# libcuda is the driver library: the container runtime injects the real one at
+# run time and the image carries only a stub, whose directory is named after the
+# target (sbsa-linux on arm64), so find it rather than assuming the path. The
+# stub stays in this stage; shipping it would shadow the injected driver.
+RUN stub=$(find /usr/local/cuda/targets -path "*/stubs/libcuda.so" | head -1) \
+    && test -n "$stub" \
+    && ln -sf "$stub" "/usr/lib/$(uname -m)-linux-gnu/libcuda.so" \
+    && ln -sf "$stub" "/usr/lib/$(uname -m)-linux-gnu/libcuda.so.1" \
+    && ldconfig
 RUN git clone --filter=blob:none "${LLAMA_REPO}" /src \
     && cd /src \
     && git checkout --quiet "${LLAMA_REF}"
@@ -25,13 +35,13 @@ RUN cmake -S /src -B /src/build -G Ninja \
       -DGGML_CUDA_FA=ON \
       -DGGML_CUDA_COMPRESSION_MODE=size \
       -DCMAKE_CUDA_ARCHITECTURES=${CUDA_ARCH} \
-      -DLLAMA_CURL=ON \
+      -DLLAMA_CURL=OFF \
       -DLLAMA_BUILD_TESTS=OFF \
     && cmake --build /src/build --target llama-server llama-bench -j"$(nproc)"
 
 FROM ${CUDA_RUNTIME}
 RUN apt-get update && apt-get install -y --no-install-recommends \
-      python3 python3-venv libgomp1 libcurl4 ca-certificates curl \
+      python3 libgomp1 ca-certificates curl \
     && rm -rf /var/lib/apt/lists/*
 COPY --from=build /src/build/bin/llama-server /usr/local/bin/llama-server
 COPY --from=build /src/build/bin/llama-bench /usr/local/bin/llama-bench
