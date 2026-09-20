@@ -1,0 +1,33 @@
+# One container: llama.cpp on :8010 and Jev's decision contract on :8011.
+#
+# Bonsai is small enough to share the box, but the Spark's unified memory means
+# an overshoot hangs the host, so the entrypoint refuses to start without
+# headroom. Pick the quantisation with MODEL_FILE: the 1-bit build is faster and
+# fine for classification, the ternary build is the one that does arithmetic.
+services:
+  bjev:
+    build: .
+    image: bjev-spark:latest
+    container_name: bjev
+    network_mode: host
+    runtime: nvidia
+    ipc: host
+    restart: unless-stopped
+    ulimits:
+      core: 0
+    volumes:
+      - ${MODELS_DIR:-./models}:/models:ro
+    environment:
+      - MODEL=/models/${MODEL_NAME:-bonsai-ternary-27b}/${MODEL_FILE:-Ternary-Bonsai-27B-PQ2_0.gguf}
+      - DRAFT=${DRAFT_FILE:-}
+      - SERVED_NAME=${SERVED_NAME:-bonsai}
+      - PORT=${PORT:-8010}
+      - DECISION_PORT=${DECISION_PORT:-8011}
+      - CTX=${CTX:-8192}
+      - NGL=${NGL:-99}
+      - PARALLEL=${PARALLEL:-1}
+      - HEADROOM_GB=${HEADROOM_GB:-8}
+      - API_KEY=${API_KEY:-}
+      - EXTRA_ARGS=${EXTRA_ARGS:-}
+      - NVIDIA_VISIBLE_DEVICES=all
+      - NVIDIA_DRIVER_CAPABILITIES=compute,utility
